@@ -37,14 +37,10 @@ def load_vector_store():
         splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
         split_docs = splitter.split_documents(documents)
 
-        texts = [doc.page_content for doc in split_docs]
-        metadatas = [doc.metadata for doc in split_docs]
-
-        vectorstore = Chroma.from_texts(
-            texts=texts,
-            embedding_function=embeddings,
-            persist_directory=INDEX_DIR,
-            metadatas=metadatas
+        vectorstore = Chroma.from_documents(
+            documents=split_docs,
+            embedding=embeddings,
+            persist_directory=INDEX_DIR
         )
         vectorstore.persist()
         return vectorstore
