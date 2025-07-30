@@ -1,0 +1,17 @@
+streamlit
+langchain
+langchain-openai
+langchain-community
+langchain-chroma
+openai
+faiss-cpu
+sentence-transformers
+torch
+transformers
+beautifulsoup4
+requests
+python-dotenv
+pydantic
+cohere
+datasets
+ragas
