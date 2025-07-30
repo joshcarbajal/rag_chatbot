@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify
+import streamlit as st
 import json
 import os
+import sqlite3
 from langchain.vectorstores import Chroma
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
@@ -9,34 +10,36 @@ from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from chromadb.config import Settings
 
-# Flask app
-app = Flask(__name__)
-
 # Config
 INDEX_DIR = "chroma_index"
 DATA_FILE = "scraped_ms_ads_data_v3.json"
+DB_FILE = "qa_history.db"
 EMBED_MODEL = "text-embedding-3-small"
 LLM_MODEL = "gpt-3.5-turbo"
 
-# Load OpenAI API Key from environment variable
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    raise ValueError("Missing OPENAI_API_KEY environment variable")
+# Load OpenAI API Key from Streamlit secrets
+openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+# Set up SQLite DB
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT,
+        answer TEXT
+    )
+""")
+conn.commit()
 
 # Load or build Chroma vector store
-vectorstore = None
-
+@st.cache_resource
 def load_vector_store():
-    global vectorstore
-    if vectorstore:
-        return vectorstore
-
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
     chroma_settings = Settings(chroma_db_impl="duckdb", persist_directory=INDEX_DIR)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
-        vectorstore = Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings, client_settings=chroma_settings)
-        return vectorstore
+        return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings, client_settings=chroma_settings)
 
     elif os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -60,16 +63,12 @@ def load_vector_store():
         return vectorstore
 
     else:
-        raise RuntimeError("Neither Chroma index nor JSON data found to build the vector store.")
+        st.error("Neither Chroma index nor JSON data found to build the vector store.")
+        st.stop()
 
 # Load QA chain
-qa_chain = None
-
+@st.cache_resource
 def load_qa_chain():
-    global qa_chain
-    if qa_chain:
-        return qa_chain
-
     vectorstore = load_vector_store()
     retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 5})
 
@@ -79,24 +78,31 @@ def load_qa_chain():
         openai_api_key=openai_api_key
     )
 
-    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
-    return qa_chain
+    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    data = request.get_json()
-    query = data.get("question", "").strip()
+# Streamlit app
+st.set_page_config(page_title="MS-ADS RAG Chatbot", layout="wide")
+st.title("🎓 MS in Applied Data Science Chatbot")
 
-    if not query:
-        return jsonify({"error": "No question provided."}), 400
+query = st.text_input("Enter your question:").strip()
 
-    try:
+if query:
+    with st.spinner("Generating answer..."):
         chain = load_qa_chain()
         answer = chain.run(query)
-        return jsonify({"question": query, "answer": answer})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
-@app.route("/")
-def index():
-    return "MS-ADS RAG Chatbot is running. Use the /ask endpoint with POST JSON {\"question\": \"...\"}"
+        # Store in SQLite
+        cursor.execute("INSERT INTO history (question, answer) VALUES (?, ?)", (query, answer))
+        conn.commit()
+
+        st.markdown(f"**Q: {query}**")
+        st.markdown(f"**A:** {answer}")
+
+# Display previous Q&A
+if st.checkbox("Show chat history"):
+    st.subheader("💬 Chat History")
+    cursor.execute("SELECT question, answer FROM history ORDER BY id DESC")
+    rows = cursor.fetchall()
+    for i, (q, a) in enumerate(rows, 1):
+        st.markdown(f"**Q{i}: {q}**")
+        st.markdown(f"**A{i}:** {a}")
