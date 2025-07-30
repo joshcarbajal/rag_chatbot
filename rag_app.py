@@ -16,7 +16,6 @@ INDEX_DIR = "chroma_index"  # Folder containing chroma.sqlite3 and other .bin fi
 DATA_FILE = "scraped_ms_ads_data_v3.json"
 EMBED_MODEL = "text-embedding-3-small"
 LLM_MODEL = "gpt-3.5-turbo"
-COLLECTION_NAME = "ms_ads_docs"
 
 # Load or build Chroma vector store
 @st.cache_resource
@@ -24,7 +23,7 @@ def load_vector_store():
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
-        return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings, collection_name=COLLECTION_NAME)
+        return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings)
 
     elif os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -45,7 +44,6 @@ def load_vector_store():
             texts=texts,
             embedding_function=embeddings,
             persist_directory=INDEX_DIR,
-            collection_name=COLLECTION_NAME,
             metadatas=metadatas
         )
         vectorstore.persist()
