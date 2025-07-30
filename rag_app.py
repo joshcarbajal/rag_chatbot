@@ -38,7 +38,10 @@ conn.commit()
 def load_vector_store():
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
 
-    if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
+    metadata_path = os.path.join(INDEX_DIR, "collection_metadata.json")
+    db_path = os.path.join(INDEX_DIR, "chroma.sqlite3")
+
+    if os.path.exists(metadata_path) and os.path.exists(db_path):
         return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings)
 
     elif os.path.exists(DATA_FILE):
@@ -62,7 +65,7 @@ def load_vector_store():
         return vectorstore
 
     else:
-        st.error("Neither Chroma index nor JSON data found to build the vector store.")
+        st.error("❌ Chroma index not found and JSON data unavailable to rebuild.")
         st.stop()
 
 # Load QA chain
