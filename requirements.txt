@@ -1,5 +1,5 @@
-streamlit
-langchain
-openai
-chromadb
-langchain-community
+streamlit>=1.33
+langchain>=0.1.17
+openai>=1.30.0
+chromadb>=0.4.24
+langchain-community>=0.0.21
