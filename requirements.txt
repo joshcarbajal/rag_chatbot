@@ -1,6 +1,5 @@
-flask
-openai
-langchain
-chromadb
-langchain-community
-gunicorn
+streamlit>=1.30.0
+openai>=1.0.0
+langchain>=0.1.16
+langchain-community>=0.0.18
+chromadb>=0.4.24
