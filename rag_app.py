@@ -6,24 +6,43 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Load OpenAI API key from Streamlit secrets
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 # Config
 INDEX_DIR = "chroma_index"  # Folder containing chroma.sqlite3 and other .bin files
+DATA_FILE = "scraped_ms_ads_data_v3.json"
 EMBED_MODEL = "text-embedding-3-small"
 LLM_MODEL = "gpt-3.5-turbo"
 
-# Load Chroma vector store
+# Load or build Chroma vector store
 @st.cache_resource
 def load_vector_store():
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
         return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings)
+
+    elif os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            raw_data = json.load(f)
+
+        documents = [
+            Document(page_content=item.get("content", ""), metadata={k: v for k, v in item.items() if k != "content"})
+            for item in raw_data
+        ]
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
+        split_docs = splitter.split_documents(documents)
+
+        vectorstore = Chroma.from_documents(split_docs, embedding_function=embeddings, persist_directory=INDEX_DIR)
+        vectorstore.persist()
+        return vectorstore
+
     else:
-        st.error(f"Chroma vector store not found in {INDEX_DIR}")
+        st.error("Neither Chroma index nor JSON data found to build the vector store.")
         st.stop()
 
 # Load QA chain
