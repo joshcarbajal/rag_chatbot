@@ -9,7 +9,6 @@ from langchain.chains import RetrievalQA
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores.chroma import Chroma
-from chromadb.config import Settings as ChromaSettings
 
 # Config
 INDEX_DIR = "chroma_index"
@@ -37,10 +36,9 @@ conn.commit()
 @st.cache_resource
 def load_vector_store():
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
-    chroma_settings = ChromaSettings(chroma_db_impl="duckdb", persist_directory=INDEX_DIR)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
-        return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings, client_settings=chroma_settings)
+        return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings)
 
     elif os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -57,8 +55,7 @@ def load_vector_store():
         vectorstore = Chroma.from_documents(
             documents=split_docs,
             embedding=embeddings,
-            persist_directory=INDEX_DIR,
-            client_settings=chroma_settings
+            persist_directory=INDEX_DIR
         )
         vectorstore.persist()
         return vectorstore
