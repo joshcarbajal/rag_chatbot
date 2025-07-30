@@ -1,4 +1,4 @@
-import streamlit as st
+from flask import Flask, request, jsonify
 import json
 import os
 from langchain.vectorstores import Chroma
@@ -7,23 +7,36 @@ from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from chromadb.config import Settings
 
-# Load OpenAI API key from Streamlit secrets
-openai_api_key = st.secrets["OPENAI_API_KEY"]
+# Flask app
+app = Flask(__name__)
 
 # Config
-INDEX_DIR = "chroma_index"  # Folder containing chroma.sqlite3 and other .bin files
+INDEX_DIR = "chroma_index"
 DATA_FILE = "scraped_ms_ads_data_v3.json"
 EMBED_MODEL = "text-embedding-3-small"
 LLM_MODEL = "gpt-3.5-turbo"
 
+# Load OpenAI API Key from environment variable
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise ValueError("Missing OPENAI_API_KEY environment variable")
+
 # Load or build Chroma vector store
-@st.cache_resource
+vectorstore = None
+
 def load_vector_store():
+    global vectorstore
+    if vectorstore:
+        return vectorstore
+
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
+    chroma_settings = Settings(chroma_db_impl="duckdb", persist_directory=INDEX_DIR)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
-        return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings)
+        vectorstore = Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings, client_settings=chroma_settings)
+        return vectorstore
 
     elif os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -40,18 +53,23 @@ def load_vector_store():
         vectorstore = Chroma.from_documents(
             documents=split_docs,
             embedding=embeddings,
-            persist_directory=INDEX_DIR
+            persist_directory=INDEX_DIR,
+            client_settings=chroma_settings
         )
         vectorstore.persist()
         return vectorstore
 
     else:
-        st.error("Neither Chroma index nor JSON data found to build the vector store.")
-        st.stop()
+        raise RuntimeError("Neither Chroma index nor JSON data found to build the vector store.")
 
 # Load QA chain
-@st.cache_resource
+qa_chain = None
+
 def load_qa_chain():
+    global qa_chain
+    if qa_chain:
+        return qa_chain
+
     vectorstore = load_vector_store()
     retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 5})
 
@@ -61,31 +79,24 @@ def load_qa_chain():
         openai_api_key=openai_api_key
     )
 
-    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
+    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
+    return qa_chain
 
-# Initialize chat history
-if "qa_history" not in st.session_state:
-    st.session_state.qa_history = []
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json()
+    query = data.get("question", "").strip()
 
-# UI Layout
-st.set_page_config(page_title="UChicago MS-ADS RAG Chatbot", layout="wide")
-st.title("🎓 MS in Applied Data Science Chatbot")
-st.markdown("Ask a question about the program, curriculum, or admissions.")
+    if not query:
+        return jsonify({"error": "No question provided."}), 400
 
-query = st.text_input("Enter your question:").strip()
-
-if query:
-    with st.spinner("Generating answer..."):
+    try:
         chain = load_qa_chain()
         answer = chain.run(query)
+        return jsonify({"question": query, "answer": answer})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-        st.session_state.qa_history.append((query, answer))
-
-# Display history
-if st.session_state.qa_history:
-    st.subheader("💬 Chat History")
-    total = len(st.session_state.qa_history)
-    for i, (q, a) in enumerate(reversed(st.session_state.qa_history), 1):
-        label_num = total - i + 1
-        st.markdown(f"**Q{label_num}: {q}**")
-        st.markdown(f"**A{label_num}:** {a}")
+@app.route("/")
+def index():
+    return "MS-ADS RAG Chatbot is running. Use the /ask endpoint with POST JSON {\"question\": \"...\"}"
