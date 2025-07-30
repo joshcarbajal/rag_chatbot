@@ -8,7 +8,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from chromadb.config import Settings
+from langchain_community.vectorstores.chroma import Chroma
+from chromadb.config import Settings as ChromaSettings
 
 # Config
 INDEX_DIR = "chroma_index"
@@ -36,7 +37,7 @@ conn.commit()
 @st.cache_resource
 def load_vector_store():
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
-    chroma_settings = Settings(chroma_db_impl="duckdb", persist_directory=INDEX_DIR)
+    chroma_settings = ChromaSettings(chroma_db_impl="duckdb", persist_directory=INDEX_DIR)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
         return Chroma(persist_directory=INDEX_DIR, embedding_function=embeddings, client_settings=chroma_settings)
