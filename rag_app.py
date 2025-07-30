@@ -2,7 +2,6 @@ import streamlit as st
 import json
 import os
 import sqlite3
-from langchain.vectorstores import Chroma
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
@@ -35,6 +34,7 @@ conn.commit()
 # Load or build Chroma vector store
 @st.cache_resource
 def load_vector_store():
+    os.environ["CHROMA_DB_IMPL"] = "duckdb"  # ✅ Force client-only mode
     embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=openai_api_key)
 
     if os.path.exists(os.path.join(INDEX_DIR, "chroma.sqlite3")):
