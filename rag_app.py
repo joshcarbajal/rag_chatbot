@@ -229,13 +229,38 @@ def create_qa_chain(openai_api_key, cohere_api_key):
         os.environ["OPENAI_API_KEY"] = openai_api_key
         os.environ["COHERE_API_KEY"] = cohere_api_key
         
+        # Check if FAISS index exists
+        faiss_index_path = "./faiss_index"
+        if not os.path.exists(faiss_index_path):
+            st.error(f"FAISS index not found at {faiss_index_path}")
+            st.error("Please ensure the FAISS index directory exists and contains the necessary files.")
+            return None, None, None
+        
+        # List files in the FAISS index directory for debugging
+        try:
+            files_in_index = os.listdir(faiss_index_path)
+            st.info(f"Files in FAISS index directory: {files_in_index}")
+        except Exception as e:
+            st.error(f"Cannot read FAISS index directory: {e}")
+        
         # Initialize components
         embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
-        vectorstore = FAISS.load_local(
-            "./faiss_index",
-            embeddings,
-            allow_dangerous_deserialization=True  # Allow since this is our own trusted index
-        )
+        
+        try:
+            vectorstore = FAISS.load_local(
+                faiss_index_path,
+                embeddings,
+                allow_dangerous_deserialization=True  # Allow since this is our own trusted index
+            )
+            st.success("FAISS index loaded successfully!")
+        except Exception as faiss_error:
+            st.error(f"FAISS loading error: {faiss_error}")
+            st.error("This might be due to:")
+            st.error("1. Corrupted index files")
+            st.error("2. Version mismatch between FAISS versions")
+            st.error("3. Index created with different embedding model")
+            st.error("4. Incomplete index files")
+            return None, None, None
         validator = ResponseValidator()
         reranker = DocumentReranker(api_key=cohere_api_key)  # Pass the API key
         
@@ -339,13 +364,25 @@ if not st.session_state.system_initialized:
         else:
             st.error("Unable to load API keys from secrets. Please check your Streamlit secrets configuration.")
 
-# Sidebar info (removed API key inputs)
+# Sidebar info
 with st.sidebar:
     st.header("System Status")
     if st.session_state.system_initialized:
         st.success("✅ System Ready")
     else:
         st.error("❌ System Not Ready")
+        st.markdown("""
+        ### Troubleshooting FAISS Error:
+        If you're seeing a FAISS error, try:
+        1. **Regenerate the index**: Delete the `faiss_index` folder and recreate it
+        2. **Check file permissions**: Ensure the app can read the index files
+        3. **Version compatibility**: Ensure FAISS versions match between creation and loading
+        4. **Complete upload**: Make sure all index files are present
+        
+        Required files in `faiss_index/`:
+        - `index.faiss` (the main index)
+        - `index.pkl` (metadata)
+        """)
     
     st.markdown("---")
     st.markdown("""
